@@ -1,11 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Drawing;
 using System.Windows.Forms;
+using Microsoft.VisualBasic;
+using System.Collections.Generic;
+using ScaleForms;
 
 namespace GoatLauncher
 {
@@ -24,8 +23,10 @@ namespace GoatLauncher
         public const double RowHeight = 0.1; // The height of one row in screens.
         public const double ScrollDelta = RowHeight / 2.0; // The distance scrolled with one click in screens.
 
-        private ScaleController _listContainer;
-        private SaveFile[] _saveFiles;
+        private Scaled<Panel> _scrollContainer;
+        private List<SaveData> _saveFiles;
+        private Scaled<Panel> _addButtonRow;
+        private Scaled<Button> _addButton;
         public MainForm()
         {
             //Create form
@@ -38,103 +39,171 @@ namespace GoatLauncher
             GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
 
             //Create listContainer
-            Panel listContainer = new Panel();
-            listContainer.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-            listContainer.BackColor = Color.Transparent;
-            Controls.Add(listContainer);
-
-            _listContainer = new ScaleController(listContainer, 0.0, 0.0, 1.0, 1.0);
+            _scrollContainer = new Scaled<Panel>(this, 0.0, 0.0, 1.0, 1.0);
+            _scrollContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+            _scrollContainer.Control.BackColor = Color.Transparent;
 
             //Create buttons
             RefreshSaves();
         }
         public void RefreshSaves()
         {
-            //Delete old buttons
-            if (_saveFiles != null)
-            {
-                for (int i = 0; i < _saveFiles.Length; i++)
-                {
-                    SaveFile saveFile = _saveFiles[i];
+            DeleteGUI();
 
-                    Controls.Remove(saveFile.PlayButton.Target);
-                    Controls.Remove(saveFile.DeleteButton.Target);
-                    Controls.Remove(saveFile.RenameButton.Target);
-                    Controls.Remove(saveFile.ContentContainer.Target);
-                    Controls.Remove(saveFile.RowContainer.Target);
+            _saveFiles = new List<SaveData>();
+            for (int i = 0; i < 5; i++)
+            {
+                SaveData saveFile = new SaveData();
+                saveFile.Name = $"goaty time number {i}";
+                _saveFiles.Add(saveFile);
+            }
+
+            InitGUI();
+        }
+        public void DeleteGUI()
+        {
+            if (!(_saveFiles is null))
+            {
+                for (int i = 0; i < _saveFiles.Count; i++)
+                {
+                    SaveData saveFile = _saveFiles[i];
+
+                    if (!(saveFile.PlayButton is null))
+                    {
+                        saveFile.PlayButton.Destroy();
+                    }
+                    if (!(saveFile.DeleteButton is null))
+                    {
+                        saveFile.DeleteButton.Destroy();
+                    }
+                    if (!(saveFile.RenameButton is null))
+                    {
+                        saveFile.RenameButton.Destroy();
+                    }
+                    if (!(saveFile.ContentContainer is null))
+                    {
+                        saveFile.ContentContainer.Destroy();
+                    }
+                    if (!(saveFile.RowContainer is null))
+                    {
+                        saveFile.RowContainer.Destroy();
+                    }
                 }
             }
 
-            //Overwrite old save files
-            _saveFiles = new SaveFile[10];
-
-            //Initialize new save files.
-            for (int i = 0; i < _saveFiles.Length; i++)
+            if (!(_addButton is null))
             {
-                SaveFile saveFile = new SaveFile();
-                saveFile.Name = $"Save file {i}";
-                _saveFiles[i] = saveFile;
+                _addButton.Destroy();
+            }
+            if (!(_addButtonRow is null))
+            {
+                _addButtonRow.Destroy();
+            }
+        }
+        public void InitGUI()
+        {
+            for (int i = 0; i < _saveFiles.Count; i++)
+            {
+                SaveData saveFile = _saveFiles[i];
+
+                saveFile.RowContainer = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * i, 1.0, 0.1);
+                saveFile.ContentContainer = new Scaled<Panel>(saveFile.RowContainer, 0.05, 0.1, 0.9, 0.8);
+                saveFile.PlayButton = new Scaled<Button>(saveFile.ContentContainer, 0.0, 0.0, 0.8, 1);
+                saveFile.DeleteButton = new Scaled<Button>(saveFile.ContentContainer, 0.8, 0.0, 0.1, 1);
+                saveFile.RenameButton = new Scaled<Button>(saveFile.ContentContainer, 0.9, 0.0, 0.1, 1);
+
+                saveFile.RowContainer.Control.Name = $"{saveFile.Name} - RowContainer";
+                saveFile.RowContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                saveFile.RowContainer.Control.BackColor = Color.Transparent;
+
+                saveFile.ContentContainer.Control.Name = $"{saveFile.Name} - ContentContainer";
+                saveFile.ContentContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                saveFile.ContentContainer.Control.BackColor = Color.Transparent;
+
+                saveFile.PlayButton.Control.Name = $"{saveFile.Name} - PlayButton";
+                saveFile.PlayButton.Control.Click += (object o, EventArgs e) => { LoadSaveData(saveFile); };
+                saveFile.PlayButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                saveFile.PlayButton.Control.Text = saveFile.Name;
+                saveFile.PlayButton.Control.MouseEnter += (object a, EventArgs e) => { saveFile.PlayButton.Control.ForeColor = Color.White; saveFile.PlayButton.Control.BackColor = Color.DarkSlateGray; };
+                saveFile.PlayButton.Control.MouseLeave += (object a, EventArgs e) => { saveFile.PlayButton.Control.ForeColor = Color.Black; saveFile.PlayButton.Control.BackColor = Color.LightGray; };
+                saveFile.PlayButton.Control.ForeColor = Color.Black;
+                saveFile.PlayButton.Control.BackColor = Color.LightGray;
+
+                saveFile.DeleteButton.Control.Name = $"{saveFile.Name} - DeleteButton";
+                saveFile.DeleteButton.Control.Click += (object o, EventArgs e) => { DeleteSaveData(saveFile); };
+                saveFile.DeleteButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                saveFile.DeleteButton.Control.Text = "Delete";
+                saveFile.DeleteButton.Control.MouseEnter += (object a, EventArgs e) => { saveFile.DeleteButton.Control.ForeColor = Color.White; saveFile.DeleteButton.Control.BackColor = Color.DarkSlateGray; };
+                saveFile.DeleteButton.Control.MouseLeave += (object a, EventArgs e) => { saveFile.DeleteButton.Control.ForeColor = Color.Black; saveFile.DeleteButton.Control.BackColor = Color.LightGray; };
+                saveFile.DeleteButton.Control.ForeColor = Color.Black;
+                saveFile.DeleteButton.Control.BackColor = Color.LightGray;
+
+                saveFile.RenameButton.Control.Name = $"{saveFile.Name} - RenameButton";
+                saveFile.RenameButton.Control.Click += (object o, EventArgs e) => { RenameSaveData(saveFile); };
+                saveFile.RenameButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                saveFile.RenameButton.Control.Text = "Rename";
+                saveFile.RenameButton.Control.MouseEnter += (object a, EventArgs e) => { saveFile.RenameButton.Control.ForeColor = Color.White; saveFile.RenameButton.Control.BackColor = Color.DarkSlateGray; };
+                saveFile.RenameButton.Control.MouseLeave += (object a, EventArgs e) => { saveFile.RenameButton.Control.ForeColor = Color.Black; saveFile.RenameButton.Control.BackColor = Color.LightGray; };
+                saveFile.RenameButton.Control.ForeColor = Color.Black;
+                saveFile.RenameButton.Control.BackColor = Color.LightGray;
             }
 
-            //Initialize buttons.
-            for (int i = 0; i < _saveFiles.Length; i++)
+            _addButtonRow = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * _saveFiles.Count, 1.0, 0.1, true);
+
+            _addButton = new Scaled<Button>(_addButtonRow, 0.05, 0.1, 0.9, 0.8);
+
+            _addButtonRow.Control.Name = "addButtonRow";
+            _addButtonRow.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+            _addButtonRow.Control.BackColor = Color.Transparent;
+
+            _addButton.Control.Name = "addButton";
+            _addButton.Control.Click += (object o, EventArgs e) => { AddSaveFile(); };
+            _addButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+            _addButton.Control.Text = "Create New Save File!";
+            _addButton.Control.MouseEnter += (object a, EventArgs e) => { _addButton.Control.ForeColor = Color.White; _addButton.Control.BackColor = Color.DarkSlateGray; };
+            _addButton.Control.MouseLeave += (object a, EventArgs e) => { _addButton.Control.ForeColor = Color.Black; _addButton.Control.BackColor = Color.LightGray; };
+            _addButton.Control.ForeColor = Color.Black;
+            _addButton.Control.BackColor = Color.LightGray;
+        }
+        public void LoadSaveData(SaveData saveFile)
+        {
+            MessageBox.Show($"Loaded save file {saveFile.Name}.");
+        }
+        public void DeleteSaveData(SaveData saveFile)
+        {
+            DialogResult result = MessageBox.Show($"Are you sure you want to perminantly delete save file \"{saveFile.Name}\"?", "Confirm Perminant Save File Deletion", MessageBoxButtons.OKCancel);
+            if (result is DialogResult.OK)
             {
-                SaveFile saveFile = _saveFiles[i];
-
-                Panel rowContainer = new Panel();
-                rowContainer.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                rowContainer.BackColor = Color.Transparent;
-                _listContainer.Target.Controls.Add(rowContainer);
-
-                Panel contentContainer = new Panel();
-                contentContainer.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                contentContainer.BackColor = Color.Transparent;
-                rowContainer.Controls.Add(contentContainer);
-
-                Button playButton = new Button();
-                playButton.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                playButton.Text = saveFile.Name;
-                playButton.MouseEnter += (object a, EventArgs e) => { playButton.ForeColor = Color.White; playButton.BackColor = Color.DarkSlateGray; };
-                playButton.MouseLeave += (object a, EventArgs e) => { playButton.ForeColor = Color.Black; playButton.BackColor = Color.LightGray; };
-                playButton.ForeColor = Color.Black;
-                playButton.BackColor = Color.LightGray;
-                contentContainer.Controls.Add(playButton);
-
-                Button deleteButton = new Button();
-                deleteButton.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                deleteButton.Text = "Delete";
-                deleteButton.MouseEnter += (object a, EventArgs e) => { deleteButton.ForeColor = Color.White; deleteButton.BackColor = Color.DarkSlateGray; };
-                deleteButton.MouseLeave += (object a, EventArgs e) => { deleteButton.ForeColor = Color.Black; deleteButton.BackColor = Color.LightGray; };
-                deleteButton.ForeColor = Color.Black;
-                deleteButton.BackColor = Color.LightGray;
-                contentContainer.Controls.Add(deleteButton);
-
-                Button renameButton = new Button();
-                renameButton.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                renameButton.Text = "Rename";
-                renameButton.MouseEnter += (object a, EventArgs e) => { renameButton.ForeColor = Color.White; renameButton.BackColor = Color.DarkSlateGray; };
-                renameButton.MouseLeave += (object a, EventArgs e) => { renameButton.ForeColor = Color.Black; renameButton.BackColor = Color.LightGray; };
-                renameButton.ForeColor = Color.Black;
-                renameButton.BackColor = Color.LightGray;
-                contentContainer.Controls.Add(renameButton);
-
-                saveFile.RowContainer = new ScaleController(rowContainer, 0.0, RowHeight * i, 1.0, 0.1);
-                saveFile.ContentContainer = new ScaleController(contentContainer, 0.05, 0.1, 0.9, 0.8);
-                saveFile.PlayButton = new ScaleController(playButton, 0.0, 0.0, 0.8, 1);
-                saveFile.DeleteButton = new ScaleController(deleteButton, 0.8, 0.0, 0.1, 1);
-                saveFile.RenameButton = new ScaleController(renameButton, 0.9, 0.0, 0.1, 1);
+                DeleteGUI();
+                _saveFiles.Remove(saveFile);
+                InitGUI();
             }
+        }
+        public void RenameSaveData(SaveData saveFile)
+        {
+            string newName = Interaction.InputBox("Name: ", "Rename Save File", saveFile.Name);
+
+            if (!(newName is null) && !(newName is "") && newName != saveFile.Name)
+            {
+                DeleteGUI();
+                saveFile.Name = newName;
+                InitGUI();
+            }
+        }
+        public void AddSaveFile()
+        {
+            MessageBox.Show("Ballz");
         }
         public void ScrollContent(int mouseWheelDelta)
         {
-            double listContainerY = _listContainer.Y;
+            double listContainerY = _scrollContainer.Y;
             listContainerY += (mouseWheelDelta / (double)SystemInformation.MouseWheelScrollDelta) * ScrollDelta;
 
             if (listContainerY > 0.0)
             {
                 listContainerY = 0.0;
             }
-            double minScrollValue = (_saveFiles.Length - 1) * (-RowHeight);
+            double minScrollValue = (_saveFiles.Count) * (-RowHeight);
             if (listContainerY < minScrollValue)
             {
                 if (minScrollValue < 0)
@@ -147,9 +216,9 @@ namespace GoatLauncher
                 }
             }
 
-            _listContainer.Y = listContainerY;
+            _scrollContainer.Y = listContainerY;
         }
-        public sealed class SaveFile
+        public sealed class SaveData
         {
             public string Name = "Unnamed Save Slot";
             public string MetaFilePath = "";
@@ -157,135 +226,11 @@ namespace GoatLauncher
             public bool Loaded = false;
             public long LastPlayedTime = 0;
 
-            public ScaleController RowContainer;
-            public ScaleController ContentContainer;
-            public ScaleController PlayButton;
-            public ScaleController RenameButton;
-            public ScaleController DeleteButton;
-        }
-        public sealed class ScaleController
-        {
-            public Control Target { get; private set; } = null;
-            public Control Parent { get; private set; } = null;
-            public double X
-            {
-                get
-                {
-                    return _x;
-                }
-                set
-                {
-                    _x = value;
-                    Reposition();
-                }
-            }
-            public double Y
-            {
-                get
-                {
-                    return _y;
-                }
-                set
-                {
-                    _y = value;
-                    Reposition();
-                }
-            }
-            public double Width
-            {
-                get
-                {
-                    return _width;
-                }
-                set
-                {
-                    if (_width <= 0.0)
-                    {
-                        throw new Exception($"{nameof(Width)} must be greater than 0.");
-                    }
-                    _width = value;
-                    Resize();
-                }
-            }
-            public double Height
-            {
-                get
-                {
-                    return _height;
-                }
-                set
-                {
-                    if (_height <= 0.0)
-                    {
-                        throw new Exception($"{nameof(Height)} must be greater than 0.");
-                    }
-                    _height = value;
-                    Resize();
-                }
-            }
-
-            private double _x = 0.0;
-            private double _y = 0.0;
-            private double _width = 1.0;
-            private double _height = 1.0;
-            public ScaleController(Control target, double x = 0.0, double y = 0.0, double width = 1.0, double height = 1.0)
-            {
-                if (target is null)
-                {
-                    throw new Exception($"{nameof(target)} may not be null.");
-                }
-                if (target is Form)
-                {
-                    throw new Exception($"{nameof(target)} may not be a form.");
-                }
-
-                if (width <= 0.0)
-                {
-                    throw new Exception($"{nameof(width)} must be greater than 0.");
-                }
-                if (height <= 0.0)
-                {
-                    throw new Exception($"{nameof(height)} must be greater than 0.");
-                }
-
-                Target = target;
-                _x = x;
-                _y = y;
-                _width = width;
-                _height = height;
-
-                if (Target.Parent is null)
-                {
-                    Parent = Target.FindForm();
-                }
-                else
-                {
-                    Parent = Target.Parent;
-                }
-
-                if (Parent is null)
-                {
-                    throw new Exception("target must be added to parent or form before creating a ScaleController. Use Form.Controls.Add");
-                }
-
-                Parent.Resize += (object o, EventArgs e) => { Reposition(); Resize(); };
-
-                Resize();
-                Reposition();
-            }
-
-            private void Resize()
-            {
-                int pixelWidth = (int)(Width * Parent.ClientSize.Width);
-                int pixelHeight = (int)(Height * Parent.ClientSize.Height);
-                Target.Size = new Size(pixelWidth, pixelHeight);
-            }
-            private void Reposition()
-            {
-                int pixelX = (int)(X * Parent.ClientSize.Width);
-                int pixelY = (int)(Y * Parent.ClientSize.Height);
-                Target.Location = new Point(pixelX, pixelY);
-            }
+            public Scaled<Panel> RowContainer;
+            public Scaled<Panel> ContentContainer;
+            public Scaled<Button> PlayButton;
+            public Scaled<Button> RenameButton;
+            public Scaled<Button> DeleteButton;
         }
     }
 }
