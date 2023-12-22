@@ -1,0 +1,8 @@
+#Visual Studio Project Gitignore Template
+.git/
+.vs/
+bin/
+obj/
+packages/
+*.user
+*.suo
