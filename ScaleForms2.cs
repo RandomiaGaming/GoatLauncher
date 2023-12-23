@@ -1,12 +1,7 @@
-﻿using System;
-using System.Drawing;
-using System.Windows.Forms;
-
-namespace ScaleForms
+﻿namespace ScaleForms
 {
     public sealed class Scaled<T> where T : System.Windows.Forms.Control, new()
     {
-        public bool DaSpecialOne = false;
         #region Public Variables
         public bool Destroyed
         {
@@ -19,7 +14,7 @@ namespace ScaleForms
         {
             get
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -30,7 +25,7 @@ namespace ScaleForms
         {
             get
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -41,7 +36,7 @@ namespace ScaleForms
         {
             get
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -49,7 +44,7 @@ namespace ScaleForms
             }
             set
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -61,7 +56,7 @@ namespace ScaleForms
         {
             get
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -69,7 +64,7 @@ namespace ScaleForms
             }
             set
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -81,7 +76,7 @@ namespace ScaleForms
         {
             get
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -89,7 +84,7 @@ namespace ScaleForms
             }
             set
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -105,7 +100,7 @@ namespace ScaleForms
         {
             get
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -113,7 +108,7 @@ namespace ScaleForms
             }
             set
             {
-                if (Destroyed)
+                if (_destroyed)
                 {
                     throw new System.Exception($"Scaled<{nameof(T)}> has been destroyed.");
                 }
@@ -128,6 +123,7 @@ namespace ScaleForms
         #endregion
         #region Private Variables
         private bool _destroyed = false;
+        private bool _removedFromParent = false;
         private T _control = null;
         private System.Windows.Forms.Control _parent = null;
         private double _x = 0.0;
@@ -136,10 +132,8 @@ namespace ScaleForms
         private double _height = 0.0;
         #endregion
         #region Public Constructors
-        public Scaled(System.Windows.Forms.Control parent, double x = 0.0, double y = 0.0, double width = 1.0, double height = 1.0, bool daspe = false)
+        public Scaled(System.Windows.Forms.Control parent, double x = 0.0, double y = 0.0, double width = 1.0, double height = 1.0)
         {
-            DaSpecialOne = daspe;
-
             if (parent is null)
             {
                 throw new System.Exception($"{nameof(parent)} may not be null.");
@@ -163,10 +157,14 @@ namespace ScaleForms
 
             _parent.ControlRemoved += (object o, System.Windows.Forms.ControlEventArgs e) =>
             {
-                if (e.Control == _control)
+                if (!(_control is null) && e.Control == _control)
                 {
-                    OnDestroy();
+                    OnRemoved();
                 }
+            };
+            _control.Disposed += (object o, System.EventArgs e) =>
+            {
+                OnDisposed();
             };
             _parent.Controls.Add(Control);
             _parent.Resize += (object o, System.EventArgs e) => { Reposition(); Resize(); };
@@ -178,12 +176,30 @@ namespace ScaleForms
         #region Public Methods
         public void Destroy()
         {
-            if (Destroyed)
+            if (_destroyed)
             {
                 throw new System.Exception($"Scaled<{nameof(T)}> has already been destroyed.");
             }
-            Parent.Controls.Remove(Control);
+
             _destroyed = true;
+
+            _x = 0.0;
+            _y = 0.0;
+            _width = 0.0;
+            _height = 0.0;
+
+            if (!(_parent is null) && !(_control is null))
+            {
+                _parent.Controls.Remove(_control);
+            }
+
+            if (!(_control is null) && !_control.IsDisposed)
+            {
+                _control.Dispose();
+            }
+
+            _control = null;
+            _parent = null;
         }
         #endregion
         #region Private Methods
@@ -192,32 +208,51 @@ namespace ScaleForms
             int pixelWidth = (int)(Width * Parent.ClientSize.Width);
             int pixelHeight = (int)(Height * Parent.ClientSize.Height);
             _control.Size = new System.Drawing.Size(pixelWidth, pixelHeight);
-
-            if (DaSpecialOne)
-            {
-                Console.WriteLine($"Width {pixelWidth} Height {pixelHeight}");
-            }
         }
         private void Reposition()
         {
             int pixelX = (int)(X * Parent.ClientSize.Width);
             int pixelY = (int)(Y * Parent.ClientSize.Height);
             _control.Location = new System.Drawing.Point(pixelX, pixelY);
-
-            if (DaSpecialOne)
-            {
-                Console.WriteLine($"X {pixelX} Y {pixelY}");
-            }
         }
-        private void OnDestroy()
+        private void OnRemoved()
         {
+            if (_destroyed)
+            {
+                return; //Because the control is being destroyed with the Destroy function.
+            }
+
             _destroyed = true;
-            _control = null;
-            _parent = null;
+
             _x = 0.0;
             _y = 0.0;
             _width = 0.0;
             _height = 0.0;
+
+            if (!(_control is null) && !_control.IsDisposed)
+            {
+                _control.Dispose();
+            }
+
+            _control = null;
+            _parent = null;
+        }
+        private void OnDisposed()
+        {
+            if (_destroyed)
+            {
+                return; //Because the control is being destroyed with the destroy function.
+            }
+
+            _destroyed = true;
+
+            _x = 0.0;
+            _y = 0.0;
+            _width = 0.0;
+            _height = 0.0;
+
+            _control = null;
+            _parent = null;
         }
         #endregion
         #region Public Opperators
@@ -230,27 +265,5 @@ namespace ScaleForms
             return source.Control;
         }
         #endregion
-    }
-    public static class ScaleFormsDemo
-    {
-        public static void Run()
-        {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new DemoForm());
-        }
-        public sealed class DemoForm : System.Windows.Forms.Form
-        {
-            public DemoForm()
-            {
-                BackColor = Color.LightGray;
-
-                Scaled<Panel> navbar = new Scaled<Panel>(this, 0, 0, 1, 0.1);
-                navbar.Control.BackColor = Color.CornflowerBlue;
-
-                Scaled<Button> homeButton = new Scaled<Button>(navbar, 0.1, 0.1, 0.1, 0.8);
-                homeButton.Control.BackColor = Color.Red;
-            }
-        }
     }
 }

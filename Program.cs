@@ -2,33 +2,181 @@
 using System.IO;
 using System.Drawing;
 using System.Windows.Forms;
-using Microsoft.VisualBasic;
+using Microsoft.VisualBasic.FileIO;
 using System.Collections.Generic;
 using ScaleForms;
+using System.Diagnostics;
 
 namespace GoatLauncher
 {
     public static class Program
     {
+
         [STAThread]
         public static void Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            Application.Run(new GoatLauncherGUI());
         }
     }
-    public sealed class MainForm : Form
+    public sealed class GoatLauncher
     {
-        public const double RowHeight = 0.1; // The height of one row in screens.
-        public const double ScrollDelta = RowHeight / 2.0; // The distance scrolled with one click in screens.
+        public const string Goat2Exe = "C:\\Program Files\\Epic Games\\GoatSimulator3\\Goat2.exe";
+        public static readonly string Goat2Folder = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\Goat2";
+        public static readonly string GoatLauncherFolder = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\GoatLauncher";
+
+        public List<SaveMeta> SaveList = new List<SaveMeta>();
+
+        public GoatLauncher()
+        {
+            if (!Directory.Exists(GoatLauncherFolder))
+            {
+                Directory.CreateDirectory(GoatLauncherFolder);
+            }
+
+            string[] savePaths = Directory.GetDirectories(GoatLauncherFolder);
+
+            foreach (string savePath in savePaths)
+            {
+                SaveMeta newSave = new SaveMeta();
+
+                newSave.SaveFolderPath = savePath;
+                newSave.Name = Directory.GetFiles(savePath, "*.gsb", System.IO.SearchOption.TopDirectoryOnly)[0];
+
+                SaveList.Add(newSave);
+            }
+
+            SaveMeta loadedSave = new SaveMeta();
+
+            loadedSave.SaveFolderPath = Goat2Folder;
+            loadedSave.Name = Directory.GetFiles(Goat2Folder, "*.gsb", System.IO.SearchOption.TopDirectoryOnly)[0];
+
+            SaveList.Add(loadedSave);
+        }
+        public void LaunchSave(SaveMeta target)
+        {
+            if (target is null)
+            {
+                throw new Exception($"{nameof(target)} may not be null.");
+            }
+
+            if (!target.IsLoaded)
+            {
+                //Get old save outta da way.
+                SaveMeta oldSave = null;
+
+                for (int i = 0; i < SaveList.Count; i++)
+                {
+                    if (SaveList[i].IsLoaded)
+                    {
+                        oldSave = SaveList[i];
+                    }
+                }
+
+                int id = 0;
+                while (id != -1)
+                {
+                    oldSave.SaveFolderPath = $"{GoatLauncherFolder}\\{id}";
+                    if (Directory.Exists(oldSave.SaveFolderPath))
+                    {
+                        id++;
+                    }
+                    else
+                    {
+                        id = -1;
+                    }
+                }
+
+                Directory.Move(Goat2Folder, oldSave.SaveFolderPath);
+
+                //Load target
+                Directory.Move(target.SaveFolderPath, Goat2Folder);
+
+                target.SaveFolderPath = Goat2Folder;
+            }
+
+            //Launch goat simulator
+            Process.Start(Goat2Exe);
+
+            //Close current program.
+            Environment.Exit(0);
+        }
+        public void DeleteSave(SaveMeta target)
+        {
+            FileSystem.DeleteDirectory(target.SaveFolderPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+
+            SaveList.Remove(target);
+        }
+        public void RenameSave(SaveMeta target, string newName)
+        {
+            //Find old name file
+            string oldNameFile = Directory.GetFiles(target.SaveFolderPath, "*.gsb", System.IO.SearchOption.TopDirectoryOnly)[0];
+
+            //Rename name file to new name.
+            File.Move(oldNameFile, $"{new FileInfo(oldNameFile).Directory.FullName}\\{newName}.gsb");
+
+            //Rename save meta
+            target.Name = newName;
+        }
+        public void CreateSave(string name)
+        {
+            foreach (SaveMeta save in SaveList)
+            {
+                if (save.Name == name)
+                {
+                    MessageBox.Show($"A save with name \"{name}\" already exists.", "Duplicate Name", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+
+            SaveMeta newSave = new SaveMeta();
+
+            newSave.Name = name;
+            int id = 0;
+            while (id != -1)
+            {
+                newSave.SaveFolderPath = $"{GoatLauncherFolder}\\{id}";
+                if (Directory.Exists(newSave.SaveFolderPath))
+                {
+                    id++;
+                }
+                else
+                {
+                    id = -1;
+                }
+            }
+            Directory.CreateDirectory(newSave.SaveFolderPath);
+            File.WriteAllText($"{newSave.SaveFolderPath}\\{name}.gbs", "");
+
+            SaveList.Add(newSave);
+        }
+        public sealed class SaveMeta
+        {
+            public string Name { get; set; } = "Unnamed Save Slot";
+            public string SaveFolderPath = "";
+            public bool IsLoaded => SaveFolderPath == Goat2Folder;
+        }
+    }
+    public sealed class GoatLauncherGUI : Form
+    {
+        #region Private Constants
+        private const double RowHeight = 0.1; // The height of one row in screens.
+        private const double ScrollDelta = RowHeight / 2.0; // The distance scrolled with one click in screens.
+        #endregion
+        #region Private Variables
+        private GoatLauncher _goatLauncher;
+
+        private List<GUIRow> _guiRows;
 
         private Scaled<Panel> _scrollContainer;
-        private List<SaveData> _saveFiles;
         private Scaled<Panel> _addButtonRow;
         private Scaled<Button> _addButton;
-        public MainForm()
+        #endregion
+        #region Public Constructors
+        public GoatLauncherGUI()
         {
+            _goatLauncher = new GoatLauncher();
+
             //Create form
             Text = "Goat Launcher 2.0";
             BackColor = Color.LightPink;
@@ -44,49 +192,38 @@ namespace GoatLauncher
             _scrollContainer.Control.BackColor = Color.Transparent;
 
             //Create buttons
-            RefreshSaves();
+            ReloadGUI();
         }
-        public void RefreshSaves()
+        #endregion
+        #region Private Methods
+        private void ReloadGUI()
         {
-            DeleteGUI();
-
-            _saveFiles = new List<SaveData>();
-            for (int i = 0; i < 5; i++)
+            //Delete old GUI
+            if (!(_guiRows is null))
             {
-                SaveData saveFile = new SaveData();
-                saveFile.Name = $"goaty time number {i}";
-                _saveFiles.Add(saveFile);
-            }
-
-            InitGUI();
-        }
-        public void DeleteGUI()
-        {
-            if (!(_saveFiles is null))
-            {
-                for (int i = 0; i < _saveFiles.Count; i++)
+                for (int i = 0; i < _guiRows.Count; i++)
                 {
-                    SaveData saveFile = _saveFiles[i];
+                    GUIRow guiRow = _guiRows[i];
 
-                    if (!(saveFile.PlayButton is null))
+                    if (!(guiRow.PlayButton is null))
                     {
-                        saveFile.PlayButton.Destroy();
+                        guiRow.PlayButton.Destroy();
                     }
-                    if (!(saveFile.DeleteButton is null))
+                    if (!(guiRow.DeleteButton is null))
                     {
-                        saveFile.DeleteButton.Destroy();
+                        guiRow.DeleteButton.Destroy();
                     }
-                    if (!(saveFile.RenameButton is null))
+                    if (!(guiRow.RenameButton is null))
                     {
-                        saveFile.RenameButton.Destroy();
+                        guiRow.RenameButton.Destroy();
                     }
-                    if (!(saveFile.ContentContainer is null))
+                    if (!(guiRow.ContentContainer is null))
                     {
-                        saveFile.ContentContainer.Destroy();
+                        guiRow.ContentContainer.Destroy();
                     }
-                    if (!(saveFile.RowContainer is null))
+                    if (!(guiRow.RowContainer is null))
                     {
-                        saveFile.RowContainer.Destroy();
+                        guiRow.RowContainer.Destroy();
                     }
                 }
             }
@@ -99,56 +236,67 @@ namespace GoatLauncher
             {
                 _addButtonRow.Destroy();
             }
-        }
-        public void InitGUI()
-        {
-            for (int i = 0; i < _saveFiles.Count; i++)
+
+            //Create rows from save list.
+            _guiRows = new List<GUIRow>(_goatLauncher.SaveList.Count);
+            for (int i = 0; i < _goatLauncher.SaveList.Count; i++)
             {
-                SaveData saveFile = _saveFiles[i];
-
-                saveFile.RowContainer = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * i, 1.0, 0.1);
-                saveFile.ContentContainer = new Scaled<Panel>(saveFile.RowContainer, 0.05, 0.1, 0.9, 0.8);
-                saveFile.PlayButton = new Scaled<Button>(saveFile.ContentContainer, 0.0, 0.0, 0.8, 1);
-                saveFile.DeleteButton = new Scaled<Button>(saveFile.ContentContainer, 0.8, 0.0, 0.1, 1);
-                saveFile.RenameButton = new Scaled<Button>(saveFile.ContentContainer, 0.9, 0.0, 0.1, 1);
-
-                saveFile.RowContainer.Control.Name = $"{saveFile.Name} - RowContainer";
-                saveFile.RowContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                saveFile.RowContainer.Control.BackColor = Color.Transparent;
-
-                saveFile.ContentContainer.Control.Name = $"{saveFile.Name} - ContentContainer";
-                saveFile.ContentContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                saveFile.ContentContainer.Control.BackColor = Color.Transparent;
-
-                saveFile.PlayButton.Control.Name = $"{saveFile.Name} - PlayButton";
-                saveFile.PlayButton.Control.Click += (object o, EventArgs e) => { LoadSaveData(saveFile); };
-                saveFile.PlayButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                saveFile.PlayButton.Control.Text = saveFile.Name;
-                saveFile.PlayButton.Control.MouseEnter += (object a, EventArgs e) => { saveFile.PlayButton.Control.ForeColor = Color.White; saveFile.PlayButton.Control.BackColor = Color.DarkSlateGray; };
-                saveFile.PlayButton.Control.MouseLeave += (object a, EventArgs e) => { saveFile.PlayButton.Control.ForeColor = Color.Black; saveFile.PlayButton.Control.BackColor = Color.LightGray; };
-                saveFile.PlayButton.Control.ForeColor = Color.Black;
-                saveFile.PlayButton.Control.BackColor = Color.LightGray;
-
-                saveFile.DeleteButton.Control.Name = $"{saveFile.Name} - DeleteButton";
-                saveFile.DeleteButton.Control.Click += (object o, EventArgs e) => { DeleteSaveData(saveFile); };
-                saveFile.DeleteButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                saveFile.DeleteButton.Control.Text = "Delete";
-                saveFile.DeleteButton.Control.MouseEnter += (object a, EventArgs e) => { saveFile.DeleteButton.Control.ForeColor = Color.White; saveFile.DeleteButton.Control.BackColor = Color.DarkSlateGray; };
-                saveFile.DeleteButton.Control.MouseLeave += (object a, EventArgs e) => { saveFile.DeleteButton.Control.ForeColor = Color.Black; saveFile.DeleteButton.Control.BackColor = Color.LightGray; };
-                saveFile.DeleteButton.Control.ForeColor = Color.Black;
-                saveFile.DeleteButton.Control.BackColor = Color.LightGray;
-
-                saveFile.RenameButton.Control.Name = $"{saveFile.Name} - RenameButton";
-                saveFile.RenameButton.Control.Click += (object o, EventArgs e) => { RenameSaveData(saveFile); };
-                saveFile.RenameButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                saveFile.RenameButton.Control.Text = "Rename";
-                saveFile.RenameButton.Control.MouseEnter += (object a, EventArgs e) => { saveFile.RenameButton.Control.ForeColor = Color.White; saveFile.RenameButton.Control.BackColor = Color.DarkSlateGray; };
-                saveFile.RenameButton.Control.MouseLeave += (object a, EventArgs e) => { saveFile.RenameButton.Control.ForeColor = Color.Black; saveFile.RenameButton.Control.BackColor = Color.LightGray; };
-                saveFile.RenameButton.Control.ForeColor = Color.Black;
-                saveFile.RenameButton.Control.BackColor = Color.LightGray;
+                GUIRow guiRow = new GUIRow();
+                guiRow.TargetSave = _goatLauncher.SaveList[i];
+                _guiRows[i] = guiRow;
             }
 
-            _addButtonRow = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * _saveFiles.Count, 1.0, 0.1, true);
+            //Init new GUI
+
+            for (int i = 0; i < _goatLauncher.SaveList.Count; i++)
+            {
+                GUIRow guiRow = _guiRows[i];
+
+                guiRow.TargetSave = _goatLauncher.SaveList[i];
+
+                guiRow.RowContainer = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * i, 1.0, 0.1);
+                guiRow.ContentContainer = new Scaled<Panel>(guiRow.RowContainer, 0.05, 0.1, 0.9, 0.8);
+                guiRow.PlayButton = new Scaled<Button>(guiRow.ContentContainer, 0.0, 0.0, 0.8, 1);
+                guiRow.DeleteButton = new Scaled<Button>(guiRow.ContentContainer, 0.8, 0.0, 0.1, 1);
+                guiRow.RenameButton = new Scaled<Button>(guiRow.ContentContainer, 0.9, 0.0, 0.1, 1);
+
+                guiRow.RowContainer.Control.Name = $"{guiRow.TargetSave.Name} - RowContainer";
+                guiRow.RowContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                guiRow.RowContainer.Control.BackColor = Color.Transparent;
+
+                guiRow.ContentContainer.Control.Name = $"{guiRow.TargetSave.Name} - ContentContainer";
+                guiRow.ContentContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                guiRow.ContentContainer.Control.BackColor = Color.Transparent;
+
+                guiRow.PlayButton.Control.Name = $"{guiRow.TargetSave.Name} - PlayButton";
+                guiRow.PlayButton.Control.Click += (object o, EventArgs e) => { OnLoad(guiRow.TargetSave); };
+                guiRow.PlayButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                guiRow.PlayButton.Control.Text = guiRow.TargetSave.Name;
+                guiRow.PlayButton.Control.MouseEnter += (object a, EventArgs e) => { guiRow.PlayButton.Control.ForeColor = Color.White; guiRow.PlayButton.Control.BackColor = Color.DarkSlateGray; };
+                guiRow.PlayButton.Control.MouseLeave += (object a, EventArgs e) => { guiRow.PlayButton.Control.ForeColor = Color.Black; guiRow.PlayButton.Control.BackColor = Color.LightGray; };
+                guiRow.PlayButton.Control.ForeColor = Color.Black;
+                guiRow.PlayButton.Control.BackColor = Color.LightGray;
+
+                guiRow.DeleteButton.Control.Name = $"{guiRow.TargetSave.Name} - DeleteButton";
+                guiRow.DeleteButton.Control.Click += (object o, EventArgs e) => { OnDelete(guiRow.TargetSave); };
+                guiRow.DeleteButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                guiRow.DeleteButton.Control.Text = "Delete";
+                guiRow.DeleteButton.Control.MouseEnter += (object a, EventArgs e) => { guiRow.DeleteButton.Control.ForeColor = Color.White; guiRow.DeleteButton.Control.BackColor = Color.DarkSlateGray; };
+                guiRow.DeleteButton.Control.MouseLeave += (object a, EventArgs e) => { guiRow.DeleteButton.Control.ForeColor = Color.Black; guiRow.DeleteButton.Control.BackColor = Color.LightGray; };
+                guiRow.DeleteButton.Control.ForeColor = Color.Black;
+                guiRow.DeleteButton.Control.BackColor = Color.LightGray;
+
+                guiRow.RenameButton.Control.Name = $"{guiRow.TargetSave.Name} - RenameButton";
+                guiRow.RenameButton.Control.Click += (object o, EventArgs e) => { OnRename(guiRow.TargetSave); };
+                guiRow.RenameButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
+                guiRow.RenameButton.Control.Text = "Rename";
+                guiRow.RenameButton.Control.MouseEnter += (object a, EventArgs e) => { guiRow.RenameButton.Control.ForeColor = Color.White; guiRow.RenameButton.Control.BackColor = Color.DarkSlateGray; };
+                guiRow.RenameButton.Control.MouseLeave += (object a, EventArgs e) => { guiRow.RenameButton.Control.ForeColor = Color.Black; guiRow.RenameButton.Control.BackColor = Color.LightGray; };
+                guiRow.RenameButton.Control.ForeColor = Color.Black;
+                guiRow.RenameButton.Control.BackColor = Color.LightGray;
+            }
+
+            _addButtonRow = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * _guiRows.Count, 1.0, 0.1);
 
             _addButton = new Scaled<Button>(_addButtonRow, 0.05, 0.1, 0.9, 0.8);
 
@@ -157,7 +305,7 @@ namespace GoatLauncher
             _addButtonRow.Control.BackColor = Color.Transparent;
 
             _addButton.Control.Name = "addButton";
-            _addButton.Control.Click += (object o, EventArgs e) => { AddSaveFile(); };
+            _addButton.Control.Click += (object o, EventArgs e) => { OnCreate(); };
             _addButton.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
             _addButton.Control.Text = "Create New Save File!";
             _addButton.Control.MouseEnter += (object a, EventArgs e) => { _addButton.Control.ForeColor = Color.White; _addButton.Control.BackColor = Color.DarkSlateGray; };
@@ -165,36 +313,45 @@ namespace GoatLauncher
             _addButton.Control.ForeColor = Color.Black;
             _addButton.Control.BackColor = Color.LightGray;
         }
-        public void LoadSaveData(SaveData saveFile)
+        private void OnLoad(GoatLauncher.SaveMeta saveFile)
         {
-            MessageBox.Show($"Loaded save file {saveFile.Name}.");
+            _goatLauncher.LaunchSave(saveFile);
+
+            ReloadGUI();
         }
-        public void DeleteSaveData(SaveData saveFile)
+        private void OnDelete(GoatLauncher.SaveMeta save)
         {
-            DialogResult result = MessageBox.Show($"Are you sure you want to perminantly delete save file \"{saveFile.Name}\"?", "Confirm Perminant Save File Deletion", MessageBoxButtons.OKCancel);
+            DialogResult result = MessageBox.Show($"Are you sure you want to perminantly delete save \"{save.Name}\"?", "Confirm Perminant Deletion", MessageBoxButtons.OKCancel);
             if (result is DialogResult.OK)
             {
-                DeleteGUI();
-                _saveFiles.Remove(saveFile);
-                InitGUI();
+                _goatLauncher.DeleteSave(save);
+
+                ReloadGUI();
             }
         }
-        public void RenameSaveData(SaveData saveFile)
+        private void OnRename(GoatLauncher.SaveMeta saveFile)
         {
-            string newName = Interaction.InputBox("Name: ", "Rename Save File", saveFile.Name);
+            string newName = Microsoft.VisualBasic.Interaction.InputBox("Name: ", "Rename Save File", saveFile.Name);
 
             if (!(newName is null) && !(newName is "") && newName != saveFile.Name)
             {
-                DeleteGUI();
-                saveFile.Name = newName;
-                InitGUI();
+                _goatLauncher.RenameSave(saveFile, newName);
+
+                ReloadGUI();
             }
         }
-        public void AddSaveFile()
+        private void OnCreate()
         {
-            MessageBox.Show("Ballz");
+            string newName = Microsoft.VisualBasic.Interaction.InputBox("Name: ", "Name New Save", "Unnamed Save");
+
+            if (!(newName is null) && !(newName is ""))
+            {
+                _goatLauncher.CreateSave(newName);
+
+                ReloadGUI();
+            }
         }
-        public void ScrollContent(int mouseWheelDelta)
+        private void ScrollContent(int mouseWheelDelta)
         {
             double listContainerY = _scrollContainer.Y;
             listContainerY += (mouseWheelDelta / (double)SystemInformation.MouseWheelScrollDelta) * ScrollDelta;
@@ -203,7 +360,7 @@ namespace GoatLauncher
             {
                 listContainerY = 0.0;
             }
-            double minScrollValue = (_saveFiles.Count) * (-RowHeight);
+            double minScrollValue = (_guiRows.Count) * (-RowHeight);
             if (listContainerY < minScrollValue)
             {
                 if (minScrollValue < 0)
@@ -218,13 +375,11 @@ namespace GoatLauncher
 
             _scrollContainer.Y = listContainerY;
         }
-        public sealed class SaveData
+        #endregion
+        #region Private Subclasses
+        private sealed class GUIRow
         {
-            public string Name = "Unnamed Save Slot";
-            public string MetaFilePath = "";
-            public string DataFolderPath = "";
-            public bool Loaded = false;
-            public long LastPlayedTime = 0;
+            public GoatLauncher.SaveMeta TargetSave;
 
             public Scaled<Panel> RowContainer;
             public Scaled<Panel> ContentContainer;
@@ -232,5 +387,6 @@ namespace GoatLauncher
             public Scaled<Button> RenameButton;
             public Scaled<Button> DeleteButton;
         }
+        #endregion
     }
 }
