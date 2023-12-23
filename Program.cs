@@ -11,7 +11,6 @@ namespace GoatLauncher
 {
     public static class Program
     {
-
         [STAThread]
         public static void Main(string[] args)
         {
@@ -22,50 +21,71 @@ namespace GoatLauncher
     }
     public sealed class GoatLauncher
     {
-        public const string Goat2Exe = "C:\\Program Files\\Epic Games\\GoatSimulator3\\Goat2.exe";
-        public static readonly string Goat2Folder = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\Goat2";
-        public static readonly string GoatLauncherFolder = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\GoatLauncher";
-
-        public List<SaveMeta> SaveList = new List<SaveMeta>();
-
+        #region Private Constants
+        private const string Goat2ExePath = "C:\\Program Files\\Epic Games\\GoatSimulator3\\Goat2.exe";
+        private static readonly string Goat2FolderPath = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\Goat2";
+        private static readonly string GoatLauncherFolderPath = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\GoatLauncher";
+        private const string GoatTagFileName = "GoatTag.txt";
+        #endregion
+        #region Public Variables
+        public List<SaveMeta> SaveList = new List<SaveMeta>(); //Plz no write
+        #endregion
+        #region Public Constructors
         public GoatLauncher()
         {
-            if (!Directory.Exists(GoatLauncherFolder))
+            if (!Directory.Exists(GoatLauncherFolderPath))
             {
-                Directory.CreateDirectory(GoatLauncherFolder);
+                Directory.CreateDirectory(GoatLauncherFolderPath);
+            }
+            if (!Directory.Exists(Goat2FolderPath))
+            {
+                Directory.CreateDirectory(Goat2FolderPath);
             }
 
-            string[] savePaths = Directory.GetDirectories(GoatLauncherFolder);
-
+            string[] savePaths = Directory.GetDirectories(GoatLauncherFolderPath);
             foreach (string savePath in savePaths)
             {
                 SaveMeta newSave = new SaveMeta();
 
                 newSave.SaveFolderPath = savePath;
-                newSave.Name = Directory.GetFiles(savePath, "*.gsb", System.IO.SearchOption.TopDirectoryOnly)[0];
+
+                string goatTagPath = $"{newSave.SaveFolderPath}\\{GoatTagFileName}";
+                if (!File.Exists(goatTagPath))
+                {
+                    File.WriteAllText(goatTagPath, "Unnamed Save File");
+                }
+
+                newSave.Name = File.ReadAllText(goatTagPath);
 
                 SaveList.Add(newSave);
             }
 
             SaveMeta loadedSave = new SaveMeta();
 
-            loadedSave.SaveFolderPath = Goat2Folder;
-            loadedSave.Name = Directory.GetFiles(Goat2Folder, "*.gsb", System.IO.SearchOption.TopDirectoryOnly)[0];
+            loadedSave.SaveFolderPath = Goat2FolderPath;
+
+            string loadedGoatTagPath = $"{loadedSave.SaveFolderPath}\\{GoatTagFileName}";
+            if (!File.Exists(loadedGoatTagPath))
+            {
+                File.WriteAllText(loadedGoatTagPath, "Unnamed Save File");
+            }
+
+            loadedSave.Name = File.ReadAllText(loadedGoatTagPath);
 
             SaveList.Add(loadedSave);
         }
-        public void LaunchSave(SaveMeta target)
+        #endregion
+        #region Public Methods
+        public bool LaunchSave(SaveMeta target)
         {
-            if (target is null)
-            {
-                throw new Exception($"{nameof(target)} may not be null.");
-            }
-
             if (!target.IsLoaded)
             {
-                //Get old save outta da way.
-                SaveMeta oldSave = null;
+                if (IsGoatSimulatorOpen())
+                {
+                    return false;
+                }
 
+                SaveMeta oldSave = null;
                 for (int i = 0; i < SaveList.Count; i++)
                 {
                     if (SaveList[i].IsLoaded)
@@ -74,88 +94,122 @@ namespace GoatLauncher
                     }
                 }
 
-                int id = 0;
-                while (id != -1)
-                {
-                    oldSave.SaveFolderPath = $"{GoatLauncherFolder}\\{id}";
-                    if (Directory.Exists(oldSave.SaveFolderPath))
-                    {
-                        id++;
-                    }
-                    else
-                    {
-                        id = -1;
-                    }
-                }
+                Directory.Move(oldSave.SaveFolderPath, $"{GoatLauncherFolderPath}\\Temp");
+                Directory.Move(target.SaveFolderPath, oldSave.SaveFolderPath);
+                Directory.Move($"{GoatLauncherFolderPath}\\Temp", target.SaveFolderPath);
 
-                Directory.Move(Goat2Folder, oldSave.SaveFolderPath);
-
-                //Load target
-                Directory.Move(target.SaveFolderPath, Goat2Folder);
-
-                target.SaveFolderPath = Goat2Folder;
+                string temp = oldSave.SaveFolderPath;
+                oldSave.SaveFolderPath = target.SaveFolderPath;
+                target.SaveFolderPath = temp;
             }
 
             //Launch goat simulator
-            Process.Start(Goat2Exe);
+            Process.Start(Goat2ExePath);
 
-            //Close current program.
-            Environment.Exit(0);
+            return true;
         }
-        public void DeleteSave(SaveMeta target)
+        public bool DeleteSave(SaveMeta target)
         {
-            FileSystem.DeleteDirectory(target.SaveFolderPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-
-            SaveList.Remove(target);
-        }
-        public void RenameSave(SaveMeta target, string newName)
-        {
-            //Find old name file
-            string oldNameFile = Directory.GetFiles(target.SaveFolderPath, "*.gsb", System.IO.SearchOption.TopDirectoryOnly)[0];
-
-            //Rename name file to new name.
-            File.Move(oldNameFile, $"{new FileInfo(oldNameFile).Directory.FullName}\\{newName}.gsb");
-
-            //Rename save meta
-            target.Name = newName;
-        }
-        public void CreateSave(string name)
-        {
-            foreach (SaveMeta save in SaveList)
+            if (target.IsLoaded && IsGoatSimulatorOpen())
             {
-                if (save.Name == name)
-                {
-                    MessageBox.Show($"A save with name \"{name}\" already exists.", "Duplicate Name", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                return false;
             }
 
-            SaveMeta newSave = new SaveMeta();
+            FileSystem.DeleteDirectory(target.SaveFolderPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+            SaveList.Remove(target);
 
-            newSave.Name = name;
-            int id = 0;
-            while (id != -1)
+            if (target.IsLoaded)
             {
-                newSave.SaveFolderPath = $"{GoatLauncherFolder}\\{id}";
-                if (Directory.Exists(newSave.SaveFolderPath))
+                if (SaveList.Count is 0)
                 {
-                    id++;
+                    SaveMeta newSave = new SaveMeta();
+                    newSave.Name = "Unnamed Save";
+                    newSave.SaveFolderPath = Goat2FolderPath;
+                    Directory.CreateDirectory(newSave.SaveFolderPath);
+                    File.WriteAllText($"{newSave.SaveFolderPath}\\{GoatTagFileName}", newSave.Name);
+                    SaveList.Add(newSave);
                 }
                 else
                 {
-                    id = -1;
+                    SaveMeta newSave = SaveList[0];
+                    Directory.Move(newSave.SaveFolderPath, Goat2FolderPath);
+                    newSave.SaveFolderPath = Goat2FolderPath;
                 }
             }
-            Directory.CreateDirectory(newSave.SaveFolderPath);
-            File.WriteAllText($"{newSave.SaveFolderPath}\\{name}.gbs", "");
 
-            SaveList.Add(newSave);
+            return true;
         }
+        public bool RenameSave(SaveMeta target, string newName)
+        {
+            if (target.IsLoaded && IsGoatSimulatorOpen())
+            {
+                return false;
+            }
+
+            File.WriteAllText($"{target.SaveFolderPath}\\{GoatTagFileName}", newName);
+
+            target.Name = newName;
+
+            return true;
+        }
+        public bool CreateSave()
+        {
+            SaveMeta newSave = new SaveMeta();
+            newSave.Name = "Unnamed Save";
+
+            int id = 0;
+            while (true)
+            {
+                newSave.SaveFolderPath = $"{GoatLauncherFolderPath}\\{id}";
+                if (!Directory.Exists(newSave.SaveFolderPath))
+                {
+                    break;
+                }
+                id++;
+            }
+
+            Directory.CreateDirectory(newSave.SaveFolderPath);
+            File.WriteAllText($"{newSave.SaveFolderPath}\\{GoatTagFileName}", newSave.Name);
+            SaveList.Add(newSave);
+
+            return true;
+        }
+        public bool IsGoatSimulatorOpen()
+        {
+            try
+            {
+                foreach (Process process in Process.GetProcesses())
+                {
+                    try
+                    {
+                        string processPath = process.MainModule.FileName;
+                        if (processPath.EndsWith("Goat2.exe") || processPath.EndsWith("Goat2-Win64-Shipping.exe") || processPath.EndsWith("Goat2-Win32-Shipping.exe"))
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+
+                    }
+                }
+            }
+            catch
+            {
+
+            }
+
+            return false;
+        }
+        #endregion
+        #region Public Subclasses
         public sealed class SaveMeta
         {
-            public string Name { get; set; } = "Unnamed Save Slot";
-            public string SaveFolderPath = "";
-            public bool IsLoaded => SaveFolderPath == Goat2Folder;
+            public string Name { get; set; } = "Unnamed Save Slot"; //Plz no write
+            public string SaveFolderPath = ""; //Plz no write
+            public bool IsLoaded => SaveFolderPath == Goat2FolderPath;
         }
+        #endregion
     }
     public sealed class GoatLauncherGUI : Form
     {
@@ -166,7 +220,7 @@ namespace GoatLauncher
         #region Private Variables
         private GoatLauncher _goatLauncher;
 
-        private List<GUIRow> _guiRows;
+        private GUIRow[] _guiRows;
 
         private Scaled<Panel> _scrollContainer;
         private Scaled<Panel> _addButtonRow;
@@ -201,7 +255,7 @@ namespace GoatLauncher
             //Delete old GUI
             if (!(_guiRows is null))
             {
-                for (int i = 0; i < _guiRows.Count; i++)
+                for (int i = 0; i < _guiRows.Length; i++)
                 {
                     GUIRow guiRow = _guiRows[i];
 
@@ -238,8 +292,8 @@ namespace GoatLauncher
             }
 
             //Create rows from save list.
-            _guiRows = new List<GUIRow>(_goatLauncher.SaveList.Count);
-            for (int i = 0; i < _goatLauncher.SaveList.Count; i++)
+            _guiRows = new GUIRow[_goatLauncher.SaveList.Count];
+            for (int i = 0; i < _guiRows.Length; i++)
             {
                 GUIRow guiRow = new GUIRow();
                 guiRow.TargetSave = _goatLauncher.SaveList[i];
@@ -248,7 +302,7 @@ namespace GoatLauncher
 
             //Init new GUI
 
-            for (int i = 0; i < _goatLauncher.SaveList.Count; i++)
+            for (int i = 0; i < _guiRows.Length; i++)
             {
                 GUIRow guiRow = _guiRows[i];
 
@@ -262,7 +316,14 @@ namespace GoatLauncher
 
                 guiRow.RowContainer.Control.Name = $"{guiRow.TargetSave.Name} - RowContainer";
                 guiRow.RowContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
-                guiRow.RowContainer.Control.BackColor = Color.Transparent;
+                if (_goatLauncher.SaveList[i].IsLoaded)
+                {
+                    guiRow.RowContainer.Control.BackColor = Color.LimeGreen;
+                }
+                else
+                {
+                    guiRow.RowContainer.Control.BackColor = Color.Transparent;
+                }
 
                 guiRow.ContentContainer.Control.Name = $"{guiRow.TargetSave.Name} - ContentContainer";
                 guiRow.ContentContainer.Control.GotFocus += (object o, EventArgs e) => { ActiveControl = null; };
@@ -296,7 +357,7 @@ namespace GoatLauncher
                 guiRow.RenameButton.Control.BackColor = Color.LightGray;
             }
 
-            _addButtonRow = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * _guiRows.Count, 1.0, 0.1);
+            _addButtonRow = new Scaled<Panel>(_scrollContainer, 0.0, RowHeight * _guiRows.Length, 1.0, 0.1);
 
             _addButton = new Scaled<Button>(_addButtonRow, 0.05, 0.1, 0.9, 0.8);
 
@@ -315,18 +376,30 @@ namespace GoatLauncher
         }
         private void OnLoad(GoatLauncher.SaveMeta saveFile)
         {
-            _goatLauncher.LaunchSave(saveFile);
+            if (_goatLauncher.LaunchSave(saveFile))
+            {
+                ReloadGUI();
 
-            ReloadGUI();
+                Close();
+            }
+            else
+            {
+                MessageBox.Show("Action cannot be preformed while Goat Simulator 3 is running.", "Error: Close Goat Simulator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
         private void OnDelete(GoatLauncher.SaveMeta save)
         {
             DialogResult result = MessageBox.Show($"Are you sure you want to perminantly delete save \"{save.Name}\"?", "Confirm Perminant Deletion", MessageBoxButtons.OKCancel);
             if (result is DialogResult.OK)
             {
-                _goatLauncher.DeleteSave(save);
-
-                ReloadGUI();
+                if (_goatLauncher.DeleteSave(save))
+                {
+                    ReloadGUI();
+                }
+                else
+                {
+                    MessageBox.Show("Action cannot be preformed while Goat Simulator 3 is running.", "Error: Close Goat Simulator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
         private void OnRename(GoatLauncher.SaveMeta saveFile)
@@ -335,20 +408,25 @@ namespace GoatLauncher
 
             if (!(newName is null) && !(newName is "") && newName != saveFile.Name)
             {
-                _goatLauncher.RenameSave(saveFile, newName);
-
-                ReloadGUI();
+                if (_goatLauncher.RenameSave(saveFile, newName))
+                {
+                    ReloadGUI();
+                }
+                else
+                {
+                    MessageBox.Show("Action cannot be preformed while Goat Simulator 3 is running.", "Error: Close Goat Simulator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
         private void OnCreate()
         {
-            string newName = Microsoft.VisualBasic.Interaction.InputBox("Name: ", "Name New Save", "Unnamed Save");
-
-            if (!(newName is null) && !(newName is ""))
+            if (_goatLauncher.CreateSave())
             {
-                _goatLauncher.CreateSave(newName);
-
                 ReloadGUI();
+            }
+            else
+            {
+                MessageBox.Show("Action cannot be preformed while Goat Simulator 3 is running.", "Error: Close Goat Simulator", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         private void ScrollContent(int mouseWheelDelta)
@@ -360,7 +438,7 @@ namespace GoatLauncher
             {
                 listContainerY = 0.0;
             }
-            double minScrollValue = (_guiRows.Count) * (-RowHeight);
+            double minScrollValue = (_guiRows.Length) * (-RowHeight);
             if (listContainerY < minScrollValue)
             {
                 if (minScrollValue < 0)
