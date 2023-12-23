@@ -167,7 +167,11 @@
                 OnDisposed();
             };
             _parent.Controls.Add(Control);
-            _parent.Resize += (object o, System.EventArgs e) => { Reposition(); Resize(); };
+            _parent.Resize += (object o, System.EventArgs e) =>
+            {
+                Reposition();
+                Resize();
+            };
 
             Resize();
             Reposition();
