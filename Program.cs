@@ -141,11 +141,6 @@ namespace GoatLauncher
         }
         public bool RenameSave(SaveMeta target, string newName)
         {
-            if (target.IsLoaded && IsGoatSimulatorOpen())
-            {
-                return false;
-            }
-
             File.WriteAllText($"{target.SaveFolderPath}\\{GoatTagFileName}", newName);
 
             target.Name = newName;
